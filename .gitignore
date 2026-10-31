@@ -1,0 +1,12 @@
+.cache/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.log
+assets/demo-url.txt*
+*.pem
+*.key
+id_ed25519*
+known_hosts*

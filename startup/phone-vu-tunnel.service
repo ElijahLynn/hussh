@@ -1,0 +1,17 @@
+[Unit]
+Description=Phone VU meter HTTPS tunnel and reconnect link
+Wants=network-online.target phone-vu-app.service
+After=network-online.target phone-vu-app.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=arduino
+WorkingDirectory=/home/arduino
+Environment=HOME=/home/arduino
+ExecStart=/bin/sh /home/arduino/run-phone-vu-tunnel.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

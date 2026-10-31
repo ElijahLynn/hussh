@@ -1,0 +1,5 @@
+name: Hush
+icon: 🤫
+description: Phone microphone drives the UNO Q LED matrix over Wi-Fi
+bricks:
+  - arduino:web_ui

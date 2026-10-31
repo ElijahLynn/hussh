@@ -1,0 +1,23 @@
+[Unit]
+Description=Phone VU meter application
+Wants=network-online.target
+After=network-online.target docker.service arduino-router.service
+Requires=docker.service arduino-router.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=arduino
+WorkingDirectory=/home/arduino
+Environment=HOME=/home/arduino
+Environment=TMPDIR=/tmp
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+ExecStart=/usr/bin/arduino-app-cli app start /home/arduino/ArduinoApps/phone-vu
+ExecStartPost=/opt/openocd/bin/arduino-reset.sh
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
