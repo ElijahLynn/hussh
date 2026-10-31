@@ -113,9 +113,11 @@ This installs two system services, backs up prior service definitions, and enabl
 | Service | Responsibility |
 | --- | --- |
 | `phone-vu-app` | Wait for networking, Docker, and Arduino Router; start the app; reset the MCU; retry failed starts. |
-| `phone-vu-tunnel` | Run cloudflared, retry failures, and publish the secure URL only after it is reachable. |
+| `phone-vu-tunnel` | Run cloudflared, retry failures, publish the secure URL only after it is reachable, and recycle a stuck tunnel after repeated public health failures. |
 
 Use systemd rather than the prototype's cron job. If you previously installed the prototype's `@reboot /home/arduino/start-phone-vu.sh` entry, remove that one entry from `crontab -e` before enabling the services; do not run both startup mechanisms.
+
+The runner checks the public HTTPS page, not just the tunnel process: a process can remain alive while Cloudflare returns an error. Three consecutive public failures trigger a service restart, while local app restarts are allowed to recover without unnecessarily rotating the tunnel URL.
 
 The tunnel exposes the demo server, not SSH or App Lab management. Anyone with the temporary public link can view the dashboard and submit readings. It is suitable for a hackathon, not an authenticated production deployment. [Cloudflare Quick Tunnel documentation](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
 
