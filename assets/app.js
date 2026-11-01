@@ -36,7 +36,7 @@ const urlParams=new URLSearchParams(location.search);
 if(urlParams.has('key')){try{sessionStorage.setItem('vu-room-key',urlParams.get('key'))}catch{}urlParams.delete('key');history.replaceState(null,'',location.pathname+(urlParams.toString()?'?'+urlParams:'')+location.hash);}
 const roomKey=(()=>{try{return sessionStorage.getItem('vu-room-key')||''}catch{return ''}})();
 nameInput.value=saved('vu-mic-name','');gain.value=saved('vu-mic-gain','0');
-function updateGain(){ $('#gainLabel').textContent=(+gain.value>=0?'+':'')+gain.value+' dB';save('vu-mic-gain',gain.value)}
+function updateGain(){ const txt=(+gain.value>=0?'+':'')+gain.value+' dB'; $('#gainLabel').textContent=txt; gain.setAttribute('aria-valuetext',txt); save('vu-mic-gain',gain.value)}
 gain.oninput=updateGain;updateGain();
 function identify(){save('vu-mic-name',nameInput.value);if(socket.connected)socket.emit('identify',roomKey?{name:nameInput.value,key:roomKey}:{name:nameInput.value})}
 nameInput.onchange=identify;
@@ -45,14 +45,14 @@ socket.on('disconnect',()=>{pending=false;statusEl.textContent='Connection lost.
 socket.on('ack',()=>pending=false);
 socket.on('array_state',data=>{state=data;lastStateAt=Date.now();roomHistory.observe(data.level);for(const mic of data.microphones){const row=rows.get(mic.id);if(row)row.history.observe(mic.level)}});
 async function keepAwake(){try{wake=await navigator.wakeLock.request('screen')}catch{}}
-function stop(){active=false;pending=false;clearInterval(sampleTimer);stream?.getTracks().forEach(t=>t.stop());stream=null;ctx?.close();ctx=null;wake?.release();button.textContent='Start microphone';$('#calibrate').disabled=true;dbHistory=[];if(socket.connected)socket.emit('stop_microphone',{});}
+function stop(){active=false;pending=false;clearInterval(sampleTimer);stream?.getTracks().forEach(t=>t.stop());stream=null;ctx?.close();ctx=null;wake?.release();button.textContent='Start microphone';button.setAttribute('aria-pressed','false');$('#calibrate').disabled=true;dbHistory=[];if(socket.connected)socket.emit('stop_microphone',{});}
 button.onclick=async()=>{
  if(active){stop();return}button.disabled=true;$('#micError').hidden=true;
  try{
   if(!navigator.mediaDevices?.getUserMedia)throw Error('Microphone requires HTTPS. Open the secure demo link.');
   stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
   ctx=new AudioContext();await ctx.resume();const analyser=ctx.createAnalyser();analyser.fftSize=2048;ctx.createMediaStreamSource(stream).connect(analyser);const samples=new Float32Array(analyser.fftSize);
-  active=true;pending=false;dbHistory=[];button.textContent='Stop microphone';$('#calibrate').disabled=false;identify();await keepAwake();
+  active=true;pending=false;dbHistory=[];button.textContent='Stop microphone';button.setAttribute('aria-pressed','true');$('#calibrate').disabled=false;identify();await keepAwake();
   sampleTimer=setInterval(()=>{
    analyser.getFloatTimeDomainData(samples);let sum=0;for(const s of samples)sum+=s*s;
    const db=20*Math.log10(Math.max(1e-6,Math.sqrt(sum/samples.length)));dbHistory.push(db);if(dbHistory.length>12)dbHistory.shift();
@@ -74,6 +74,7 @@ function paint(){
  const live=socket.connected&&now-lastStateAt<2500;
  displayLevel+=(state.level-displayLevel)*0.65;
  const reading=live?Math.round(displayLevel):0;
+ $('#meter').setAttribute('aria-valuenow',reading);
  segments.forEach((e,i)=>{const next='seg'+(live&&i<Math.round(reading*13/100)?' on'+(i>9?' hot':''):'');if(e.className!==next)e.className=next});
  const updateNumbers=now-lastNumbers>=250;if(updateNumbers){lastNumbers=now;text($('#reading'),live?reading:'—');}$('#loud').hidden=!(live&&state.alert);$('#meter').hidden=live&&state.alert;
  text($('#arrayCount'),live?`${state.count} active microphone${state.count===1?'':'s'}`:'Waiting for connection');
