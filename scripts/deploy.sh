@@ -15,7 +15,7 @@ case "$mode" in
  *) echo 'Unknown deploy mode' >&2; exit 2 ;;
 esac
 # files is a fixed list from the case above, not arbitrary user input.
-tar -C "$root" --exclude='__pycache__' --exclude='demo-url.txt*' -czf "$build/hush.tgz" $files
+tar -C "$root" --exclude='__pycache__' --exclude='demo-url.txt*' --exclude='.env*' --exclude='*.pem' --exclude='*.key' -czf "$build/hush.tgz" $files
 ssh_run "$target" 'mkdir -p /home/arduino/ArduinoApps/phone-vu'
 scp_run "$build/hush.tgz" "$target:/home/arduino/hush-upload.tgz"
 ssh_run "$target" 'tar -xzf /home/arduino/hush-upload.tgz -C /home/arduino/ArduinoApps/phone-vu && rm /home/arduino/hush-upload.tgz'

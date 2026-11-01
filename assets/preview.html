@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Hush · Distributed Sound-Awareness Array</title>
+  <meta name="description" content="A distributed sound-awareness dashboard and microphone array built for the Arduino UNO Q.">
+  <meta name="theme-color" content="#f5f3ed">
+  <link rel="stylesheet" href="hush.css">
+  <style>
+    .banner {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .banner-text {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .banner-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: #eef5f2;
+      color: var(--primary);
+      border: 1px solid #d0e4dc;
+    }
+    .banner-badge i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--quiet);
+      display: inline-block;
+    }
+    .banner a.btn-link {
+      background: var(--primary);
+      color: #fffefa;
+      padding: 8px 16px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.15s ease;
+    }
+    .banner a.btn-link:hover {
+      background: #28594f;
+    }
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin: 20px 0;
+    }
+    .spec-box {
+      background: #f8faf7;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .spec-box b {
+      display: block;
+      color: var(--primary);
+      font-size: 13px;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .spec-box p {
+      font-size: 13px;
+      margin: 0;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="tag">Distributed Sound Awareness · Arduino UNO Q</div>
+    <h1>Hush</h1>
+    <p>A calmer room starts with listening. Multiple phones form a privacy-preserving microphone array where the loudest active source drives an STM32 LED matrix.</p>
+  </header>
+
+  <div class="banner">
+    <div class="banner-text">
+      <span class="banner-badge"><i></i> Interactive Web Simulator</span>
+      Test your microphone below. Audio never leaves your device—only relative loudness levels (0–100) are measured.
+    </div>
+    <div>
+      <a class="btn-link" href="https://github.com/philgear/hussh" target="_blank" rel="noopener">View GitHub Source ↗</a>
+    </div>
+  </div>
+
+  <main class="layout">
+    <div class="card">
+      <h2>Room Level (Simulated Array)</h2>
+      <p id="arrayCount">Local simulator active</p>
+      <div id="loud" hidden>HUSH</div>
+      <div class="meter" id="meter"></div>
+      <div id="readingWrap">
+        <span id="reading">—</span>
+        <span class="small"> / 100</span>
+      </div>
+      <div id="roomHistory"></div>
+      <div class="legend" aria-label="Sound level colors">
+        <span><i></i>Quiet (&lt;45)</span>
+        <span><i class="moderate"></i>Moderate (45–74)</span>
+        <span><i class="loud"></i>Loud (&ge;75)</span>
+      </div>
+      <p id="location">Start a microphone to test the VU meter</p>
+      <p id="status">Interactive browser simulator ready</p>
+      <div id="sources"></div>
+    </div>
+
+    <div class="card mic-card">
+      <h2>Your Microphone</h2>
+      <label for="micName">Station or location</label>
+      <input id="micName" type="text" maxlength="32" placeholder="e.g. Front desk" value="Preview Station" autocomplete="off">
+      <p id="myLevel" class="small">Microphone is off</p>
+      <button id="start">Start microphone</button>
+      <p id="micError" class="small" role="alert" hidden></p>
+      <label for="gain">Sensitivity <span id="gainLabel">+0 dB</span></label>
+      <input id="gain" type="range" min="-35" max="40" value="0">
+      <button id="calibrate" class="secondary" disabled>Set current room sound as baseline</button>
+      <p id="calibrationStatus" class="small">Starts quiet, then auto-adjusts background sensitivity to simulate live room noise floor.</p>
+
+      <div class="spec-grid">
+        <div class="spec-box">
+          <b>Hardware Node</b>
+          <p>Arduino UNO Q (STM32U5 + Qualcomm Linux SoC)</p>
+        </div>
+        <div class="spec-box">
+          <b>Display Matrix</b>
+          <p>13-segment blue LED matrix + dual RGB status LEDs</p>
+        </div>
+        <div class="spec-box">
+          <b>Privacy Invariant</b>
+          <p>Zero audio recordings transmitted. 10 Hz RMS readings only.</p>
+        </div>
+        <div class="spec-box">
+          <b>Live Node URL</b>
+          <p>Available at <code style="color:var(--primary)">live.hussh.tech</code> when board is tethered.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Created for the Hackathon by <a href="https://github.com/ElijahLynn/hussh" style="color:var(--primary)">Elijah Lynn</a> and <a href="https://github.com/philgear/hussh" style="color:var(--primary)">Phil Gear</a>. Built with Arduino Zephyr core, Python RouterBridge, and Cloudflare Edge.
+  </footer>
+
+  <script src="preview.js"></script>
+</body>
+</html>
+

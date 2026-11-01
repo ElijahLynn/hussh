@@ -10,3 +10,6 @@ assets/demo-url.txt*
 *.key
 id_ed25519*
 known_hosts*
+
+# Sandboxing descriptor (local host tooling)
+.sandbox.json
