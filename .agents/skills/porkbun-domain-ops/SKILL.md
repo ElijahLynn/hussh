@@ -53,4 +53,4 @@ pwsh -NoProfile -Command "exit ([int]!((Test-Path ~/.env) -and (Select-String -P
      - `Referrer-Policy: strict-origin-when-cross-origin`
      - `X-Frame-Options: SAMEORIGIN`
      - `X-Content-Type-Options: nosniff`
-     - `Permissions-Policy: microphone=(self)`
+     - `Permissions-Policy: microphone=(self), screen-wake-lock=(self)`
