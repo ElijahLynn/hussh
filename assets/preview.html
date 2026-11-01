@@ -83,12 +83,28 @@
       margin: 0;
       line-height: 1.4;
     }
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .brand-logo {
+      width: 72px;
+      height: 72px;
+      border-radius: 14px;
+      object-fit: cover;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+    }
   </style>
 </head>
 <body>
   <header>
     <div class="tag">Distributed Sound Awareness · Arduino UNO Q</div>
-    <h1>Hush</h1>
+    <div class="brand-header">
+      <img src="hush-logo.webp" alt="Hush Logo" class="brand-logo" width="72" height="72">
+      <h1>Hush</h1>
+    </div>
     <p>A calmer room starts with listening. Multiple phones form a privacy-preserving microphone array where the loudest active source drives an STM32 LED matrix.</p>
   </header>
 
