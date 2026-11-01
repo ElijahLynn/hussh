@@ -14,4 +14,4 @@
 
 Edit CSS custom properties in `assets/hush.css`. Level ranges are also labeled numerically and by text, so color is not the only signal. Graphs use three SVG paths each rather than hundreds of animated DOM bars. Reduced-motion preferences disable the small fill transition.
 
-The logo is being designed by a team member. No generated logo is included in the app or repository. Integrate the chosen asset in the header when available, retaining a readable Hush heading and alternative text as appropriate.
+The logo was designed by Joshua. Integrate the chosen asset in the header when available, retaining a readable Hush heading and alternative text as appropriate.

@@ -31,6 +31,8 @@ ALLOWED_TARGET_HOST_RE = re.compile(
     re.IGNORECASE,
 )
 SSH_HOST_RE = re.compile(r"^(?:[A-Za-z0-9_-]+@)?[A-Za-z0-9][A-Za-z0-9._-]{0,252}$")
+EMAIL_ALIAS_RE = re.compile(r"^[A-Za-z0-9._%+-]{1,64}$")
+EMAIL_ADDRESS_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 NS_HOST_RE = re.compile(
     r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
 )
@@ -93,6 +95,20 @@ def validate_ssh_host(host: str) -> str:
     cleaned = host.strip()
     if cleaned.startswith("-") or not SSH_HOST_RE.match(cleaned):
         raise ValueError(f"Invalid SSH target host: {host!r}")
+    return cleaned
+
+
+def validate_email_alias(alias: str) -> str:
+    cleaned = alias.strip().lower()
+    if not EMAIL_ALIAS_RE.match(cleaned):
+        raise ValueError(f"Invalid email alias: {alias!r}")
+    return cleaned
+
+
+def validate_email_address(email: str) -> str:
+    cleaned = email.strip()
+    if not EMAIL_ADDRESS_RE.match(cleaned):
+        raise ValueError(f"Invalid forward email address: {email!r}")
     return cleaned
 
 
@@ -293,6 +309,29 @@ def cmd_get_ns(args: argparse.Namespace) -> None:
         print(f"  {ns}")
 
 
+def cmd_list_email_forwards(args: argparse.Namespace) -> None:
+    domain = validate_domain(args.domain)
+    res = api_post(f"domain/getEmailForwarding/{domain}")
+    forwards = res.get("forwards", [])
+    print(f"Email Forwards for {domain} ({len(forwards)} total):")
+    for fwd in forwards:
+        print(f"  [{fwd.get('id')}] {fwd.get('alias')}@{domain} -> {fwd.get('destination')}")
+
+
+def cmd_set_email_forward(args: argparse.Namespace) -> None:
+    domain = validate_domain(args.domain)
+    alias = validate_email_alias(args.alias)
+    dest = validate_email_address(args.destination)
+    existing = api_post(f"domain/getEmailForwarding/{domain}")
+    for fwd in existing.get("forwards", []):
+        if (fwd.get("alias") or "").lower() == alias and (fwd.get("destination") or "") == dest:
+            print(f"Email forward already active: {alias}@{domain} -> {dest}")
+            return
+    payload = {"alias": alias, "destination": dest}
+    res = api_post(f"domain/addEmailForward/{domain}", payload)
+    print(f"Created email forward [{res.get('id')}]: {alias}@{domain} -> {dest}")
+
+
 def cmd_set_ns(args: argparse.Namespace) -> None:
     domain = validate_domain(args.domain)
     nameservers = validate_nameservers(args.nameservers)
@@ -343,6 +382,15 @@ def main() -> None:
     p_sync.set_defaults(func=cmd_sync_board)
 
     sub.add_parser("get-ns", help="Get authoritative nameservers").set_defaults(func=cmd_get_ns)
+
+    sub.add_parser("list-emails", help="List active email forwards").set_defaults(
+        func=cmd_list_email_forwards
+    )
+
+    p_email = sub.add_parser("set-email", help="Configure email forwarding for hussh.tech")
+    p_email.add_argument("--alias", required=True, help="Email alias (e.g. 'team' for team@hussh.tech)")
+    p_email.add_argument("--destination", required=True, help="Destination email to forward to")
+    p_email.set_defaults(func=cmd_set_email_forward)
 
     p_ns = sub.add_parser("set-ns", help="Update authoritative nameservers")
     p_ns.add_argument("nameservers", nargs="+", help="Nameserver hostnames")

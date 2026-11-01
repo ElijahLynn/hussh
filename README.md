@@ -2,7 +2,7 @@
 
 A distributed sound-awareness dashboard and microphone array built for the **Arduino UNO Q**. Open the secure webpage on several phones, name each microphone, and let the loudest active location drive the board's blue LED meter and RGB warnings.
 
-Built for the Hackathon by **Team Hush** (Elijah Lynn, Brian, Joshua, & Phil Gear).
+Built for the [MLH Hacktoberfest Hack Day Portland × Portland AI Community](https://www.mlh.com/events/hacktoberfest-hack-day-portland-x-portland-ai-community) by **Team Hush** (Elijah Lynn, Brian, Joshua [Logo Designer], & Phil Gear).
 
 Audio never leaves the phones. The server receives relative loudness readings (0–100 at 10 Hz), not audio recordings.
 
@@ -19,7 +19,7 @@ Audio never leaves the phones. The server receives relative loudness readings (0
   - 30-second bar-history sparklines for the entire room and individual stations.
 - **Accessible & Responsive UX/UI**:
   - Full WCAG accessibility: semantic ARIA meter, polite status announcements, assertive HUSH alerts, and keyboard skip-links.
-  - Elijah's matrix logo integrated into a responsive squircle with vibrant electric feedback.
+  - Joshua's matrix logo integrated into a responsive squircle with vibrant electric feedback.
 - **Zero-Hardware Browser Simulator**: `assets/preview.html` allows immediate testing of the multi-source array logic in any browser without needing physical hardware connected.
 - **Automated Infrastructure & Custom Domain**:
   - Autonomous power-bank boot via systemd.
@@ -28,19 +28,32 @@ Audio never leaves the phones. The server receives relative loudness readings (0
 
 ---
 
-## Architecture
+## Architecture & DigitalOcean Open-Source AI
 
 ```mermaid
 flowchart LR
-  P[Phone microphones] -->|Loudness numbers over HTTPS| T[Cloudflare Tunnel / hussh.tech]
-  T --> W[UNO Q WebUI / Socket.IO]
-  W --> A[Per-source smoothing + loudest-active arbitration]
-  A -->|RouterBridge RPC| M[STM32 microcontroller]
-  M --> L[13-segment Blue matrix + dual RGB LEDs]
-  A -->|Shared state snapshots| D[All connected dashboards]
+  subgraph Edge["Client Edge (Privacy Invariant)"]
+    P["Phones (Web Audio Analyser)"] -->|Relative Loudness 0-100 at 10 Hz| T["Cloudflare / hussh.tech"]
+  end
+
+  subgraph Hardware["Arduino UNO Q (Physical Node)"]
+    T --> W["Linux SoC (WebUI / Socket.IO)"]
+    W --> A["array_state.py (Smoothing & Loudest Arbitration)"]
+    A -->|RouterBridge RPC| M["STM32 Coprocessor"]
+    M --> L["13-Segment Blue Matrix + RGB Status LEDs"]
+  end
+
+  subgraph Cloud["DigitalOcean Open-Weight AI"]
+    A -.->|30s Aggregated Rolling Telemetry| AI["DigitalOcean Gradient (Llama 3 / Gemma 2)"]
+    AI -.->|Acoustic Moderator & Adaptive Thresholds| W
+  end
+
+  A -->|Real-Time Snapshots| D["All Web Dashboards"]
 ```
 
-This is a distributed set of sound sensors, not a phase-synchronized microphone array or a calibrated sound-level meter.
+### Real-Time Physical VU + Open-Source AI Co-Processing
+1. **Zero-Latency Physical Metering**: The STM32 microcontroller continuously drives the 13-segment blue LED matrix and RGB status LEDs at a tight 25 Hz loop (`sketch.ino`), providing immediate visual cues to everyone in the room.
+2. **DigitalOcean Open-Weight Acoustic AI**: While raw audio never leaves phones, 30-second rolling noise profiles (RMS variance, frequency of spikes, station counts) are evaluated by an open-weight model hosted on [DigitalOcean Gradient](http://mlh.link/digitalocean). The AI calculates room acoustic fatigue and adapts the dynamic HUSH alert thresholds to prevent alert fatigue in large or bustling spaces.
 
 ---
 
@@ -160,6 +173,14 @@ When running on a 5 V / 3 A USB-C power bank, allow roughly **60–90 seconds** 
 
 ---
 
+## MLH Sponsor Track: Best Open-Source AI Project (DigitalOcean)
+
+Huush targets the **Best Open-Source AI Project** prize category:
+- **Open-Weight AI Component**: Integrated with open-weight models (Llama 3 / Gemma 2) on [DigitalOcean](http://mlh.link/digitalocean) to provide contextual, non-punitive acoustic moderation without transmitting private voice data.
+- **Hardware Integration**: The physical Arduino UNO Q LED matrix acts as the real-time feedback surface, bridged seamlessly between edge devices and cloud-hosted open-weight intelligence.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Diagnostic & Recovery |
@@ -189,6 +210,8 @@ tests/                   Python arbitration tests, security guards, and C++ firm
 
 ## Presentation & Media
 
-- **Hackathon Slide Deck**: [Hush Presentation Slides](https://docs.google.com/presentation/d/1jP3CuTykp_4LUVrt76FiEEfXdFVJt3TnR8M8GVah5TA/edit?slide=id.p10)
+- **Presentation & Event**:
+  - **MLH Hack Day Event**: [Hacktoberfest Hack Day Portland × Portland AI Community](https://www.mlh.com/events/hacktoberfest-hack-day-portland-x-portland-ai-community)
+  - **Slide Deck**: [Hush Presentation Slides](https://docs.google.com/presentation/d/1jP3CuTykp_4LUVrt76FiEEfXdFVJt3TnR8M8GVah5TA/edit?slide=id.p10)
 - **Live Simulator**: [hussh.tech](https://hussh.tech)
 - **Board Target**: `live.hussh.tech`

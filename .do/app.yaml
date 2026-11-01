@@ -1,0 +1,16 @@
+name: hussh
+region: nyc
+services:
+- name: web
+  github:
+    branch: infrastructure
+    deploy_on_push: true
+    repo: philgear/hussh
+  http_port: 8080
+  run_command: python3 -m http.server 8080 --directory assets
+  envs:
+  - key: PORT
+    value: "8080"
+  routes:
+  - path: /
+
