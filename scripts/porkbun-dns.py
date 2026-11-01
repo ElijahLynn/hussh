@@ -10,23 +10,110 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 API_BASE = "https://api.porkbun.com/api/json/v3"
 ALLOWED_DOMAINS = {"hussh.tech"}
+ALLOWED_RECORD_TYPES = {"A", "AAAA", "CNAME", "ALIAS", "TXT"}
+
+SUBDOMAIN_RE = re.compile(
+    r"^(?:\*|[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?)*$",
+    re.IGNORECASE,
+)
+ALLOWED_TARGET_HOST_RE = re.compile(
+    r"^(?:[a-z0-9-]+\.trycloudflare\.com|(?:[a-z0-9-]+\.)?hussh\.tech)$",
+    re.IGNORECASE,
+)
+SSH_HOST_RE = re.compile(r"^(?:[A-Za-z0-9_-]+@)?[A-Za-z0-9][A-Za-z0-9._-]{0,252}$")
+NS_HOST_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+)
+
+
+def validate_domain(domain: str) -> str:
+    cleaned = domain.lower().strip()
+    if cleaned not in ALLOWED_DOMAINS:
+        raise ValueError(
+            f"Refusing to operate on '{domain}'. Only {sorted(ALLOWED_DOMAINS)} is permitted by this project."
+        )
+    return cleaned
 
 
 def assert_domain_allowed(domain: str) -> None:
-    if domain.lower().strip() not in ALLOWED_DOMAINS:
-        sys.stderr.write(
-            f"SECURITY GUARD: Refusing to operate on '{domain}'. "
-            f"Only {sorted(ALLOWED_DOMAINS)} is permitted by this project.\n"
-        )
+    try:
+        validate_domain(domain)
+    except ValueError as exc:
+        sys.stderr.write(f"SECURITY GUARD: {exc}\n")
         sys.exit(3)
+
+
+def validate_record_type(rtype: str) -> str:
+    cleaned = rtype.strip().upper()
+    if cleaned not in ALLOWED_RECORD_TYPES:
+        raise ValueError(
+            f"Unsupported DNS record type '{rtype}'. Allowed: {sorted(ALLOWED_RECORD_TYPES)}."
+        )
+    return cleaned
+
+
+def validate_subdomain(sub: str) -> str:
+    cleaned = sub.strip()
+    if cleaned in ("", "@"):
+        return ""
+    if len(cleaned) > 190 or not SUBDOMAIN_RE.match(cleaned):
+        raise ValueError(f"Invalid DNS subdomain label: {sub!r}")
+    return cleaned.lower()
+
+
+def validate_forward_target(url: str, allow_external: bool = False) -> str:
+    cleaned = url.strip()
+    if not cleaned or any(ord(ch) <= 32 or ord(ch) == 127 for ch in cleaned):
+        raise ValueError("Forward target URL contains whitespace or control characters.")
+    parsed = urllib.parse.urlsplit(cleaned)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise ValueError(f"Forward target must be a valid https:// URL: {url!r}")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Forward target URL must not include embedded credentials.")
+    host = parsed.hostname.lower()
+    if not allow_external and not ALLOWED_TARGET_HOST_RE.match(host):
+        raise ValueError(
+            f"Target host '{host}' is not in the Hush allowlist (*.trycloudflare.com, hussh.tech). "
+            "Pass --allow-external-target only when intentionally redirecting outside Hush."
+        )
+    return cleaned
+
+
+def validate_ssh_host(host: str) -> str:
+    cleaned = host.strip()
+    if cleaned.startswith("-") or not SSH_HOST_RE.match(cleaned):
+        raise ValueError(f"Invalid SSH target host: {host!r}")
+    return cleaned
+
+
+def validate_nameservers(nameservers: list[str]) -> list[str]:
+    if not nameservers:
+        raise ValueError("At least one nameserver hostname is required.")
+    cleaned_list: list[str] = []
+    for ns in nameservers:
+        cleaned = ns.strip().lower().rstrip(".")
+        if len(cleaned) > 253 or not NS_HOST_RE.match(cleaned):
+            raise ValueError(f"Invalid nameserver hostname: {ns!r}")
+        cleaned_list.append(cleaned)
+    return cleaned_list
+
+
+def _redact(text: str, secrets: list[str]) -> str:
+    redacted = text
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted[:300]
 
 
 def load_dotenv() -> None:
@@ -41,7 +128,11 @@ def load_dotenv() -> None:
                 continue
             key, _, val = line.partition("=")
             key = key.strip()
-            val = val.strip().strip('"').strip("'")
+            if key.startswith("export "):
+                key = key[len("export ") :].strip()
+            val = val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                val = val[1:-1]
             if key and key not in os.environ:
                 os.environ[key] = val
 
@@ -59,7 +150,9 @@ def get_credentials() -> dict[str, str]:
 
 
 def api_post(endpoint: str, payload: dict | None = None) -> dict:
-    body = get_credentials()
+    creds = get_credentials()
+    secrets = [creds["apikey"], creds["secretapikey"]]
+    body = dict(creds)
     if payload:
         body.update(payload)
     data = json.dumps(body).encode("utf-8")
@@ -68,7 +161,7 @@ def api_post(endpoint: str, payload: dict | None = None) -> dict:
         data=data,
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "hussh-porkbun-cli/1.0",
+            "User-Agent": "hussh-porkbun-cli/1.1",
         },
         method="POST",
     )
@@ -76,11 +169,12 @@ def api_post(endpoint: str, payload: dict | None = None) -> dict:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        err_Text = exc.read().decode("utf-8", errors="replace")
-        sys.stderr.write(f"HTTP {exc.code} from Porkbun ({endpoint}): {err_Text}\n")
+        err_text = _redact(exc.read().decode("utf-8", errors="replace"), secrets)
+        sys.stderr.write(f"HTTP {exc.code} from Porkbun ({endpoint}): {err_text}\n")
         sys.exit(1)
     except urllib.error.URLError as exc:
-        sys.stderr.write(f"Network error contacting Porkbun ({endpoint}): {exc}\n")
+        err_text = _redact(str(exc), secrets)
+        sys.stderr.write(f"Network error contacting Porkbun ({endpoint}): {err_text}\n")
         sys.exit(1)
 
 
@@ -90,9 +184,10 @@ def cmd_ping(_args: argparse.Namespace) -> None:
 
 
 def cmd_list(args: argparse.Namespace) -> None:
-    res = api_post(f"dns/retrieve/{args.domain}")
+    domain = validate_domain(args.domain)
+    res = api_post(f"dns/retrieve/{domain}")
     records = res.get("records", [])
-    print(f"DNS Records for {args.domain} ({len(records)} total):")
+    print(f"DNS Records for {domain} ({len(records)} total):")
     for rec in records:
         print(
             f"  [{rec.get('id')}] {rec.get('type'):6s} "
@@ -101,113 +196,108 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_upsert(args: argparse.Namespace) -> None:
-    sub = args.name.strip()
-    fqdn = f"{sub}.{args.domain}" if sub and sub != "@" else args.domain
-    existing = api_post(f"dns/retrieveByNameType/{args.domain}/{args.type}/{sub if sub and sub != '@' else ''}")
+    domain = validate_domain(args.domain)
+    rtype = validate_record_type(args.type)
+    sub = validate_subdomain(args.name)
+    if args.ttl < 600:
+        raise ValueError("TTL must be at least 600 seconds for Porkbun DNS.")
+    fqdn = f"{sub}.{domain}" if sub else domain
+    encoded_sub = urllib.parse.quote(sub, safe="")
+    lookup_path = (
+        f"dns/retrieveByNameType/{domain}/{rtype}/{encoded_sub}"
+        if sub
+        else f"dns/retrieveByNameType/{domain}/{rtype}/"
+    )
+    existing = api_post(lookup_path)
     records = existing.get("records", [])
     payload = {
-        "name": "" if sub in ("", "@") else sub,
-        "type": args.type.upper(),
-        "content": args.content,
+        "name": sub,
+        "type": rtype,
+        "content": args.content.strip(),
         "ttl": str(args.ttl),
     }
     if records:
-        rec_id = records[0]["id"]
-        api_post(f"dns/edit/{args.domain}/{rec_id}", payload)
-        print(f"Updated {args.type} record [{rec_id}] for {fqdn} -> {args.content}")
+        rec_id = urllib.parse.quote(str(records[0]["id"]), safe="")
+        api_post(f"dns/edit/{domain}/{rec_id}", payload)
+        print(f"Updated {rtype} record [{rec_id}] for {fqdn} -> {payload['content']}")
     else:
-        res = api_post(f"dns/create/{args.domain}", payload)
-        print(f"Created {args.type} record [{res.get('id')}] for {fqdn} -> {args.content}")
+        res = api_post(f"dns/create/{domain}", payload)
+        print(f"Created {rtype} record [{res.get('id')}] for {fqdn} -> {payload['content']}")
 
 
 def cmd_set_forward(args: argparse.Namespace) -> None:
-    sub = "" if args.subdomain in ("", "@") else args.subdomain.strip()
-    existing = api_post(f"domain/getUrlForwarding/{args.domain}")
+    domain = validate_domain(args.domain)
+    sub = validate_subdomain(args.subdomain)
+    allow_ext = bool(getattr(args, "allow_external_target", False))
+    target = validate_forward_target(args.target, allow_external=allow_ext)
+
+    existing = api_post(f"domain/getUrlForwarding/{domain}")
     for fwd in existing.get("forwards", []):
-        if fwd.get("subdomain", "") == sub:
-            api_post(f"domain/deleteUrlForward/{args.domain}/{fwd['id']}")
-            print(f"Removed previous URL forward [{fwd['id']}] for '{sub or '@'}'")
+        if (fwd.get("subdomain") or "").lower() == sub:
+            fwd_id = urllib.parse.quote(str(fwd["id"]), safe="")
+            api_post(f"domain/deleteUrlForward/{domain}/{fwd_id}")
+            print(f"Removed previous URL forward [{fwd_id}] for '{sub or '@'}'")
 
     payload = {
         "subdomain": sub,
-        "location": args.target,
+        "location": target,
         "type": args.type,
         "includePath": "yes" if args.include_path else "no",
         "wildcard": "yes" if args.wildcard else "no",
     }
-    api_post(f"domain/addUrlForward/{args.domain}", payload)
-    host = f"{sub}.{args.domain}" if sub else args.domain
-    print(f"Configured URL forward: https://{host} -> {args.target} ({args.type})")
+    api_post(f"domain/addUrlForward/{domain}", payload)
+    host = f"{sub}.{domain}" if sub else domain
+    print(f"Configured URL forward: https://{host} -> {target} ({args.type})")
 
 
 def cmd_list_forwards(args: argparse.Namespace) -> None:
-    res = api_post(f"domain/getUrlForwarding/{args.domain}")
+    domain = validate_domain(args.domain)
+    res = api_post(f"domain/getUrlForwarding/{domain}")
     forwards = res.get("forwards", [])
-    print(f"URL Forwards for {args.domain} ({len(forwards)} total):")
+    print(f"URL Forwards for {domain} ({len(forwards)} total):")
     for fwd in forwards:
         sub = fwd.get("subdomain") or "@"
         print(f"  [{fwd.get('id')}] {sub} -> {fwd.get('location')} ({fwd.get('type')})")
 
 
 def cmd_sync_board(args: argparse.Namespace) -> None:
-    cmd = ["ssh", args.host, "cat /home/arduino/ArduinoApps/phone-vu/assets/demo-url.txt"]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    domain = validate_domain(args.domain)
+    host = validate_ssh_host(args.host)
+    sub = validate_subdomain(args.subdomain)
+    cmd = ["ssh", "--", host, "cat /home/arduino/ArduinoApps/phone-vu/assets/demo-url.txt"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write(f"Timed out reading demo-url.txt from {host}.\n")
+        sys.exit(1)
     if proc.returncode != 0:
-        sys.stderr.write(f"Failed to read demo-url.txt from {args.host}: {proc.stderr}\n")
+        sys.stderr.write(f"Failed to read demo-url.txt from {host}: {proc.stderr}\n")
         sys.exit(1)
-    url = proc.stdout.strip()
-    if not url.startswith("https://"):
-        sys.stderr.write(f"Invalid tunnel URL on board: {url!r}\n")
-        sys.exit(1)
+    url = validate_forward_target(proc.stdout.strip(), allow_external=False)
     ns = argparse.Namespace(
-        domain=args.domain,
-        subdomain=args.subdomain,
+        domain=domain,
+        subdomain=sub,
         target=url,
         type="temporary",
         include_path=True,
         wildcard=False,
+        allow_external_target=False,
     )
     cmd_set_forward(ns)
-
-
-def cmd_sync_stop(args: argparse.Namespace) -> None:
-    stop_id = str(args.stop).strip()
-    base = args.target.rstrip("/")
-    target_url = f"{base}/?stop={stop_id}"
-    if args.name:
-        from urllib.parse import quote_plus
-        target_url += f"&name={quote_plus(args.name)}"
-    sub = f"stop-{stop_id}"
-    ns = argparse.Namespace(
-        domain=args.domain,
-        subdomain=sub,
-        target=target_url,
-        type="temporary",
-        include_path=False,
-        wildcard=False,
-    )
-    cmd_set_forward(ns)
-    if args.also_root:
-        ns_root = argparse.Namespace(
-            domain=args.domain,
-            subdomain="",
-            target=target_url,
-            type="temporary",
-            include_path=False,
-            wildcard=False,
-        )
-        cmd_set_forward(ns_root)
 
 
 def cmd_get_ns(args: argparse.Namespace) -> None:
-    res = api_post(f"domain/getNs/{args.domain}")
+    domain = validate_domain(args.domain)
+    res = api_post(f"domain/getNs/{domain}")
     for ns in res.get("ns", []):
         print(f"  {ns}")
 
 
 def cmd_set_ns(args: argparse.Namespace) -> None:
-    api_post(f"domain/updateNs/{args.domain}", {"ns": args.nameservers})
-    print(f"Updated nameservers for {args.domain}: {', '.join(args.nameservers)}")
+    domain = validate_domain(args.domain)
+    nameservers = validate_nameservers(args.nameservers)
+    api_post(f"domain/updateNs/{domain}", {"ns": nameservers})
+    print(f"Updated nameservers for {domain}: {', '.join(nameservers)}")
 
 
 def main() -> None:
@@ -229,10 +319,16 @@ def main() -> None:
 
     p_fwd = sub.add_parser("set-forward", help="Configure Porkbun URL forwarding")
     p_fwd.add_argument("--subdomain", default="", help="Subdomain (empty or '@' for root)")
-    p_fwd.add_argument("--target", required=True, help="Destination URL (e.g. https://...trycloudflare.com)")
+    p_fwd.add_argument("--target", required=True, help="Destination URL (https://*.trycloudflare.com)")
     p_fwd.add_argument("--type", choices=["temporary", "permanent"], default="temporary")
     p_fwd.add_argument("--include-path", action="store_true", default=True)
     p_fwd.add_argument("--wildcard", action="store_true", default=False)
+    p_fwd.add_argument(
+        "--allow-external-target",
+        action="store_true",
+        default=False,
+        help="Allow forwarding to an HTTPS host outside *.trycloudflare.com / hussh.tech",
+    )
     p_fwd.set_defaults(func=cmd_set_forward)
 
     sub.add_parser("list-forwards", help="List active URL forwards").set_defaults(
@@ -246,15 +342,6 @@ def main() -> None:
     p_sync.add_argument("--subdomain", default="", help="Subdomain to forward (default: root hussh.tech)")
     p_sync.set_defaults(func=cmd_sync_board)
 
-    p_stop = sub.add_parser(
-        "sync-stop", help="Route stop-<ID>.hussh.tech (TriMet Stop ID) to a target Hush URL with ?stop=<ID>"
-    )
-    p_stop.add_argument("--stop", required=True, help="TriMet Stop ID (e.g. 7777, 8333, 2592, 365)")
-    p_stop.add_argument("--target", required=True, help="Base HTTPS tunnel URL (e.g. https://...trycloudflare.com)")
-    p_stop.add_argument("--name", default="", help="Optional stop location label (e.g. 'Pioneer Sq South')")
-    p_stop.add_argument("--also-root", action="store_true", help="Also forward root hussh.tech to this stop")
-    p_stop.set_defaults(func=cmd_sync_stop)
-
     sub.add_parser("get-ns", help="Get authoritative nameservers").set_defaults(func=cmd_get_ns)
 
     p_ns = sub.add_parser("set-ns", help="Update authoritative nameservers")
@@ -263,9 +350,12 @@ def main() -> None:
 
     args = parser.parse_args()
     assert_domain_allowed(args.domain)
-    args.func(args)
+    try:
+        args.func(args)
+    except ValueError as exc:
+        sys.stderr.write(f"SECURITY GUARD: {exc}\n")
+        sys.exit(3)
 
 
 if __name__ == "__main__":
     main()
-

@@ -2,7 +2,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 python3 -m unittest discover -s tests -v
-node --check assets/app.js
+for js in assets/app.js assets/preview.js assets/reconnect.js; do node --check "$js"; done
+python3 -m py_compile scripts/porkbun-dns.py
 for file in scripts/*.sh startup/*.sh; do sh -n "$file"; done
 build=$(mktemp -d)
 trap 'rm -rf "$build"' EXIT

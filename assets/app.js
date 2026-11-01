@@ -32,10 +32,13 @@ const roomHistory=new HistoryChart('Room history');$('#roomHistory').append(room
 setInterval(()=>{const live=socket.connected&&Date.now()-lastStateAt<2500;roomHistory.commit(live);for(const row of rows.values())row.history.commit(live)},250);
 function saved(key,fallback){try{return localStorage.getItem(key)??fallback}catch{return fallback}}
 function save(key,value){try{localStorage.setItem(key,value)}catch{}}
+const urlParams=new URLSearchParams(location.search);
+if(urlParams.has('key')){try{sessionStorage.setItem('vu-room-key',urlParams.get('key'))}catch{}urlParams.delete('key');history.replaceState(null,'',location.pathname+(urlParams.toString()?'?'+urlParams:'')+location.hash);}
+const roomKey=(()=>{try{return sessionStorage.getItem('vu-room-key')||''}catch{return ''}})();
 nameInput.value=saved('vu-mic-name','');gain.value=saved('vu-mic-gain','0');
 function updateGain(){ $('#gainLabel').textContent=(+gain.value>=0?'+':'')+gain.value+' dB';save('vu-mic-gain',gain.value)}
 gain.oninput=updateGain;updateGain();
-function identify(){save('vu-mic-name',nameInput.value);if(socket.connected)socket.emit('identify',{name:nameInput.value})}
+function identify(){save('vu-mic-name',nameInput.value);if(socket.connected)socket.emit('identify',roomKey?{name:nameInput.value,key:roomKey}:{name:nameInput.value})}
 nameInput.onchange=identify;
 socket.on('connect',()=>{pending=false;identify();statusEl.textContent='Connected. Waiting for array readings…'});
 socket.on('disconnect',()=>{pending=false;statusEl.textContent='Connection lost. Reconnecting…'});
@@ -55,7 +58,7 @@ button.onclick=async()=>{
    const db=20*Math.log10(Math.max(1e-6,Math.sqrt(sum/samples.length)));dbHistory.push(db);if(dbHistory.length>12)dbHistory.shift();
    const level=Math.max(0,Math.min(100,(db+60+Number(gain.value))/60*100));
    if(socket.connected&&(!pending||Date.now()-pendingAt>1000)){
-    pending=true;pendingAt=Date.now();socket.volatile.emit('level',{level,name:nameInput.value});
+    pending=true;pendingAt=Date.now();socket.volatile.emit('level',roomKey?{level,name:nameInput.value,key:roomKey}:{level,name:nameInput.value});
    }
   },100);
  }catch(e){stop();$('#micError').textContent=e.message;$('#micError').hidden=false;}finally{button.disabled=false}

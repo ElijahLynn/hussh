@@ -1,15 +1,16 @@
+import os
 import time
 from arduino.app_utils import App, Bridge
 from arduino.app_bricks.web_ui import WebUI
 from array_state import MicrophoneArray
 
 ui = WebUI()
-array = MicrophoneArray()
+array = MicrophoneArray(join_key=os.environ.get('HUSSH_JOIN_KEY'))
 alert = False
 
 def identify(client, data):
     if isinstance(data, dict):
-        array.identify(client, data.get('name', ''))
+        array.identify(client, data.get('name', ''), key=data.get('key'))
 
 def level(client, data):
     if array.update(client, data):

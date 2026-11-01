@@ -52,5 +52,34 @@ class ArrayTests(unittest.TestCase):
         self.assertLess(level, 100)
         self.assertEqual(len(self.array.snapshot()['loudest']['name']), 32)
 
+    def test_client_cap_and_stale_name_eviction(self):
+        bounded = MicrophoneArray(clock=lambda: self.now, stale_after=2.0, name_ttl=10.0, max_clients=2)
+        self.assertTrue(bounded.update('c1', {'level': 40, 'name': 'One'}))
+        self.assertTrue(bounded.update('c2', {'level': 50, 'name': 'Two'}))
+        self.assertFalse(bounded.update('c3', {'level': 99, 'name': 'Overflow'}))
+        self.assertEqual(bounded.snapshot()['count'], 2)
+
+        # Idle viewer names expire after name_ttl
+        bounded.stop('c1')
+        bounded.identify('v1', 'Viewer1')
+        self.now = 11.0
+        bounded.snapshot()
+        self.assertNotIn('v1', bounded.names)
+        self.assertNotIn('c1', bounded.names)
+
+    def test_optional_join_key_blocks_unauthenticated_spoofing(self):
+        guarded = MicrophoneArray(clock=lambda: self.now, join_key='room-secret-42')
+        self.assertFalse(guarded.update('spoofer', {'level': 100, 'name': 'Attacker'}))
+        self.assertFalse(guarded.update('spoofer', {'level': 100, 'key': 'wrong-key'}))
+        self.assertEqual(guarded.snapshot()['level'], 0)
+
+        self.assertTrue(guarded.update('room-phone', {'level': 55, 'name': 'Table 1', 'key': 'room-secret-42'}))
+        self.assertEqual(guarded.snapshot()['level'], 55)
+        # Subsequent frames on the same session remain authorized until disconnect
+        self.now = 0.2
+        self.assertTrue(guarded.update('room-phone', {'level': 55}))
+        guarded.disconnect('room-phone')
+        self.assertFalse(guarded.update('room-phone', {'level': 80}))
+
 if __name__ == '__main__':
     unittest.main()
