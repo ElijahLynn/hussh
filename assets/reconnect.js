@@ -1,22 +1,45 @@
-const ALLOWED_DEMO_URL = /^https:\/\/([a-z0-9-]+\.trycloudflare\.com|([a-z0-9-]+\.)?hussh\.tech)(\/.*)?$/i;
+/**
+ * Huush — Automatic Reconnection Handler
+ * 
+ * Provides a gentle fallback screen when the board is rebooting or the tunnel drops.
+ * Probes the target server with a lightweight HEAD request every 2.5 seconds
+ * and redirects immediately once the service recovers.
+ */
 
-async function check() {
-  const linkEl = document.querySelector('#link');
-  const statusEl = document.querySelector('#status');
+// Interval in milliseconds between reconnection attempts
+const PING_INTERVAL_MS = 2500;
+
+// Resolve target URL from current query string (?next=...) or default to apex
+const params = new URLSearchParams(window.location.search);
+const targetUrl = params.get('next') || '/';
+
+const statusNode = document.querySelector('#reconnect-status');
+
+/**
+ * Checks connectivity by sending a lightweight HEAD request with cache busting.
+ */
+async function checkConnectivity() {
   try {
-    const res = await fetch('demo-url.txt?t=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) throw new Error('demo-url unavailable');
-    const url = (await res.text()).trim();
-    if (!ALLOWED_DEMO_URL.test(url)) throw new Error('untrusted tunnel target');
-    linkEl.href = url;
-    linkEl.hidden = false;
-    statusEl.textContent = 'Ready. Open the secure demo, then tap Start microphone.';
-  } catch {
-    statusEl.textContent = 'Board is starting or waiting for internet. This page checks automatically.';
-    linkEl.hidden = true;
+    const probeUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}_probe=${Date.now()}`;
+    const response = await fetch(probeUrl, {
+      method: 'HEAD',
+      cache: 'no-store',
+      mode: 'no-cors'
+    });
+
+    if (statusNode) {
+      statusNode.textContent = 'Connection restored! Returning to dashboard…';
+    }
+
+    // Forward back to dashboard upon successful probe
+    window.location.replace(targetUrl);
+  } catch (err) {
+    if (statusNode) {
+      statusNode.textContent = 'Reconnecting to Huush board…';
+    }
   }
 }
 
-check();
-setInterval(check, 2500);
-
+// Start polling
+setInterval(checkConnectivity, PING_INTERVAL_MS);
+checkConnectivity();
