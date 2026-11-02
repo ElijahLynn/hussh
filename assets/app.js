@@ -346,6 +346,12 @@ button.onclick = async () => {
       // Map dB to 0–100 scale based on calibrated noise floor
       const level = Math.max(0, Math.min(100, ((db + 60 + Number(gain.value)) / 60) * 100));
 
+      // If disconnected from backend board, update local display meter directly
+      if (!socket.connected) {
+        displayLevel += (level - displayLevel) * 0.65;
+        roomHistory.observe(level);
+      }
+
       // Emit level using volatile transport (drops stale packets on high network jitter)
       if (socket.connected && (!pending || Date.now() - pendingAt > 1000)) {
         pending = true;
@@ -391,11 +397,12 @@ function paint() {
   if (now - lastPaint < 100) return;
   lastPaint = now;
 
-  const live = socket.connected && now - lastStateAt < 2500;
+  const live = (socket.connected && now - lastStateAt < 2500) || (!socket.connected && active);
+  const effectiveLevel = socket.connected ? state.level : (active ? Math.round(displayLevel) : 0);
 
   // Exponential moving average filter for smooth meter animation
-  displayLevel += (state.level - displayLevel) * 0.65;
-  const reading = live ? Math.round(displayLevel) : 0;
+  displayLevel += ((socket.connected ? state.level : displayLevel) - displayLevel) * 0.65;
+  const reading = Math.round(displayLevel);
 
   // Accessible meter attribute update
   $('#meter').setAttribute('aria-valuenow', reading);
@@ -439,15 +446,17 @@ function paint() {
       active
         ? mine
           ? `Your microphone: ${mine.level}/100`
-          : 'Your microphone is joining…'
+          : `Your microphone: ${reading}/100 (local meter)`
         : 'Viewing the array · your microphone is off'
     );
   }
 
   text(
     statusEl,
-    !socket.connected
-      ? 'Connection lost. Reconnecting…'
+    active && !socket.connected
+      ? 'Microphone active (Standalone preview mode · Arduino offline)'
+      : !socket.connected
+      ? 'Connecting to backend…'
       : !live
       ? 'Waiting for live readings…'
       : !state.board_ok
