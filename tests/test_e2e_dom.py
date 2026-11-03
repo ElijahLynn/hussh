@@ -1,9 +1,13 @@
-import urllib.request
-import re
+import functools
 from html.parser import HTMLParser
+import http.server
+from pathlib import Path
+import threading
 import unittest
+import urllib.request
 
-BASE_URL = 'http://127.0.0.1:8765'
+ASSETS_DIR = Path(__file__).resolve().parents[1] / 'assets'
+
 
 class DOMParser(HTMLParser):
     def __init__(self):
@@ -37,9 +41,28 @@ class DOMParser(HTMLParser):
             self.inline_scripts.append(clean)
 
 
+class _QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+
 class EndToEndWebTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        handler = functools.partial(_QuietHTTPHandler, directory=str(ASSETS_DIR))
+        cls.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        cls.port = cls.server.server_address[1]
+        cls.base_url = f'http://127.0.0.1:{cls.port}'
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
     def fetch_dom(self, path):
-        req = urllib.request.Request(f'{BASE_URL}/{path}', headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(f'{self.base_url}/{path}', headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as resp:
             self.assertEqual(resp.status, 200)
             html = resp.read().decode('utf-8')
@@ -49,7 +72,7 @@ class EndToEndWebTests(unittest.TestCase):
 
     def test_e2e_index_dashboard(self):
         html, dom = self.fetch_dom('index.html')
-        
+
         # 1. Branding & Title
         self.assertIn('<title>Huush · Shared sound awareness</title>', html)
         h1_elems = [e for e in dom.elements if e['tag'] == 'h1']
@@ -84,4 +107,3 @@ class EndToEndWebTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
