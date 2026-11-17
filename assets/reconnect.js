@@ -1,45 +1,41 @@
 /**
- * Huush — Automatic Reconnection Handler
- * 
- * Provides a gentle fallback screen when the board is rebooting or the tunnel drops.
- * Probes the target server with a lightweight HEAD request every 2.5 seconds
- * and redirects immediately once the service recovers.
+ * Huush — Reconnect Page
+ *
+ * Phones only allow the microphone on HTTPS. On the board's local Wi-Fi address the
+ * dashboard is plain HTTP, so this page finds the board's current secure (HTTPS) link
+ * and shows it as a button.
+ *
+ * How the link gets here: startup/run-phone-vu-tunnel.sh starts the Cloudflare tunnel,
+ * checks that it answers, and writes its address to assets/demo-url.txt every 10 seconds.
+ * This page reads that file every 2.5 seconds.
+ *
+ * Only Cloudflare quick-tunnel addresses and hussh.tech are accepted, so the file cannot
+ * be used to send people to an unrelated site.
  */
 
-// Interval in milliseconds between reconnection attempts
-const PING_INTERVAL_MS = 2500;
+const CHECK_INTERVAL_MS = 2500;
+const ALLOWED_DEMO_URL = /^https:\/\/([a-z0-9-]+\.trycloudflare\.com|([a-z0-9-]+\.)?hussh\.tech)(\/.*)?$/i;
 
-// Resolve target URL from current query string (?next=...) or default to apex
-const params = new URLSearchParams(window.location.search);
-const targetUrl = params.get('next') || '/';
+const statusEl = document.querySelector('#status');
+const linkEl = document.querySelector('#link');
 
-const statusNode = document.querySelector('#reconnect-status');
-
-/**
- * Checks connectivity by sending a lightweight HEAD request with cache busting.
- */
-async function checkConnectivity() {
+/** Reads demo-url.txt and shows the secure link, or a waiting message if there is none yet. */
+async function check() {
   try {
-    const probeUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}_probe=${Date.now()}`;
-    const response = await fetch(probeUrl, {
-      method: 'HEAD',
-      cache: 'no-store',
-      mode: 'no-cors'
-    });
+    const res = await fetch(`demo-url.txt?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('demo-url.txt not published yet');
 
-    if (statusNode) {
-      statusNode.textContent = 'Connection restored! Returning to dashboard…';
-    }
+    const url = (await res.text()).trim();
+    if (!ALLOWED_DEMO_URL.test(url)) throw new Error('address not on the allow list');
 
-    // Forward back to dashboard upon successful probe
-    window.location.replace(targetUrl);
-  } catch (err) {
-    if (statusNode) {
-      statusNode.textContent = 'Reconnecting to Huush board…';
-    }
+    linkEl.href = url;
+    linkEl.hidden = false;
+    statusEl.textContent = 'Ready. Open the secure demo, then tap Start microphone.';
+  } catch {
+    linkEl.hidden = true;
+    statusEl.textContent = 'Board is starting or waiting for internet. This page checks automatically.';
   }
 }
 
-// Start polling
-setInterval(checkConnectivity, PING_INTERVAL_MS);
-checkConnectivity();
+check();
+setInterval(check, CHECK_INTERVAL_MS);
