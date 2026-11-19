@@ -2,7 +2,7 @@
 
 A distributed sound-awareness dashboard and microphone array built for the **Arduino UNO Q**. Open the secure webpage on several phones, name each microphone, and let the loudest active location drive the board's blue LED meter and RGB warnings.
 
-Built for the [MLH Hacktoberfest Hack Day Portland × Portland AI Community](https://www.mlh.com/events/hacktoberfest-hack-day-portland-x-portland-ai-community) by **Team Hush** (Elijah Lynn, Brian, Joshua [Logo Designer], & Phil Gear).
+Built for the [MLH Hacktoberfest Hack Day Portland × Portland AI Community](https://www.mlh.com/events/hacktoberfest-hack-day-portland-x-portland-ai-community) by **Team Hush** (Elijah Lynn, Brian, Joshua [Logo Designer, Reconnect Page], & Phil Gear).
 
 Audio never leaves the phones. The server receives relative loudness readings (0–100 at 10 Hz), not audio recordings.
 
